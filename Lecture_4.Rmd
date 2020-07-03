@@ -1,0 +1,64 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library(rethinking)
+```
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+Prior Predictive Simulation
+```{r}
+m5_1 <- quap(alist( 
+  D ~ dnorm(mu, sigma), 
+  mu <- a + bA * A, 
+  a ~ dnorm(0, 0.2), 
+  bA ~ dnorm(0,0.5), 
+  sigma ~ dexp(1)), data = d)
+```
+
+```{r}
+set.seed(10)
+prior <- extract.prior(m5_1)
+mu <- link(m5_1, post = prior, data = list(A=c(2,2)))
+plot(NULL, xlim = c(-2,2), ylim=c(2,2))
+for (i in 1:50) lines(c(-2,2), mu[i,], col=col.alpha("black,0.4"))
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+Milk Fat Content in Primates vs. Neocortex Activity
+```{r}
+data(milk)
+d <- milk
+pairs(~kcal.per.g + log(mass) + neocortex.perc, data =d )
+```
+
+
+```{r}
+summary(d)
+```
+
+```{r}
+m5_7 <- quap(alist( 
+  K ~ dnorm(mu, sigma), 
+  mu <- a  +bN*N, bM*M, 
+  a ~ dnorm(0,0.2), 
+  bN ~ dnorm(0, 0.5), 
+  bM ~ dnorm(0,0.5), 
+  sigma ~ dexp(1)), 
+  data = d)
+precis(m5_7)
+```
+

@@ -1,0 +1,88 @@
+---
+title: "Statistical Rethinking: Chapter 2"
+output: html_notebook
+---
+
+
+```{r 2.2}
+dbinom(6, size = 9, prob = 0.5)
+```
+
+$$
+Pr(p)=\frac{1}{1-0}=0
+$$
+
+
+#### Regularizing or weakly informative priors 
+Engineering assumtpions, chosen to help the machine learn. The flat prior 
+
+Grid Approximation
+
+1. Define the grid. This means you decide how many points to use in estimating the posterior, and then you make a list of the parameter values on the grid.
+2. Compute the value of the prior at each parameter value on the grid.
+3. Compute the likelihood at each parameter value.
+4. Compute the unstandardized posterior at each parameter value, by multiplying the prior by the likelihood.
+5. Finally, standardize the posterior, by dividing each value by the sum of all values. In the globe tossing context, here's the code to complete all five of these steps:
+
+```{r}
+
+# define grid
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+
+# define prior 
+prior <- rep(1,1000)
+
+# compute the likelihood at each value in grid
+likelihood <- dbinom(6,size=9, prob = p_grid)
+
+#compute product of likelihood and prior 
+unstd.posterior <- likelihood * prior
+
+posterior <- unstd.posterior / sum(unstd.posterior)
+```
+
+```{r}
+
+plot(p_grid, posterior, type="b", xlab = "probability of water", ylab="posterior probability")
+mtext("20 points")
+```
+
+#### Quadratic Approximation
+
+1. Find the posterior mode. This is usually accomplished by some optimization algorithm, a procedure that virtually “climbs” the posterior distribution, as if it were a mountain. The golem doesn't know where the peak is, but it does know the slope under its feet. There are many well-developed optimization procedures, most of them more clever than simple hill climbing. But all of them try to find peaks.
+
+2. Once you find the peak of the posterior, you must estimate the curvature near the peak. This curvature is sufficient to compute a quadratic approximation of the entire posterior distribution. In some cases, these calculations can be done analytically, but usually your computer uses some numerical technique instead.
+
+
+```{r}
+library(rethinking)
+globe.qa <- map(
+  alist(
+    w <- dbinom(9, p),
+    p <- dunif(0,1)
+  ),
+  data = list(w=6))
+
+precis(globe.qa)
+
+```
+```{r}
+w <- 6 
+n <- 9 
+
+curve(dbeta(x, w+1, n-w+1), from = 0, to = 1)
+curve(dnorm(x, 0.67, 0.16), lty=2, add=TRUE)
+```
+
+$$
+x(t)=t
+$$
+
+$$
+y(t)=t^2
+$$
+
+$$
+y=x^2
+$$
+

@@ -1,0 +1,294 @@
+---
+title: "Statistical Rethinking: Chapter 3 "
+output: html_notebook
+---
+```{r}
+library(rethinking)
+```
+
+
+There is a blood test that correctly detects vampirism 95% of the time. In more precise and mathematical notation, Pr(positive test result | vampire) = 0.95. Its a very accurate test, nearly always catching real vampires. It alsoo makes mistakes, though,in the form of false positives. One percent of the time, it incorrectly diagnoses normal people as vampires, Pr(positive test result|mortal) = 0.01 \. The final bit of information we are told is that vampires are rather rare, being only 0.1% of the population, implying Pr(vampire) = 0.001. 
+
+Suppose now that someone tests positive for vampireism. What's the probability that he or she is a bloodsucking importal? 
+
+$$
+Pr(vampire|positive)=\frac{Pr(positive|vampire)Pr(vampire)}{Pr(positive)}
+$$
+
+
+```{r}
+PrPV <- 0.95
+PrPM <- 0.01
+PrV <- 0.001
+
+PrP <- PrPV*PrV + PrPM*(1-PrV)
+PrVP <- PrPV*PrV / PrP
+PrVP
+```
+
+
+### Alternative problem statment
+1. In a population of 100,000 people, 100 of them are vampires 
+2. Of the 100 who are vampires, 95 of them will test positive for vampirism 
+3. Of the 99,900 mortals, 999 of them will test positive for vampirism
+
+$$
+Pr(vampire|positive)=\frac{95}{1094}=0.087
+$$
+
+
+Whenever the condition of interest is very rare, having a test that finds all the true cases is still no guarantee that a positive result carries much information at all. 
+
+
+The posterior probability is a a probability distribution. And like all probability distributions, we can image drawing samples from it. The sampled events in this case are paratmer values. Most paramters have noe exat empirical realization. The Bayesian formalism treats paratmeter distribution as relative plausibility, not as any physical random process. 
+
+```{r}
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- rep(1,1000)
+likelihood <- dbinom(6, size = 9, prob = p_grid)
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+
+```
+
+
+
+
+```{r}
+# Buckets of parameter
+samples <- sample(p_grid, prob = posterior, size=1e4, replace=TRUE)
+plot(samples)
+dens(samples)
+```
+
+
+## 3.2 Sampling to summarize 
+
+Once your model produces a posterior distribution, the model's work is done. But your work has just begun. It is necessary to summarize and interpret the posterior distribution. 
+
+Some of those questions become: 
+* How much posterior probabilty lies below some parameter value? 
+* How much posterior probability lies between two paramter values? 
+* Which paramter value marks the lower 5% of the posterior probability? 
+* Which range of parameter values contains 90% of the posterior probabilty? 
+
+These questions can be categorized in the following: 
+1. Intervals of defined boundaries
+2. Intervals of defined probability mass
+3. Point estimates 
+
+### 3.2.1 Intervals of defined boundaries 
+```{r}
+sum(posterior[p_grid < 0.5])
+sum(samples < 0.5) / 1e4
+sum(samples > 0.5& samples < 0.75) / 1e4
+```
+
+### 3.2.2 Intervals of defined mass 
+
+credible interval: An interval of posterior probability (can be interchangably used with confidence interval) - i
+
+```{r}
+quantile(samples, 0.8)
+quantile(samples, c(0.1, 0.9))
+```
+
+percentile intervals (PI) : a good job of communicating the shape of a distribution 
+
+```{r}
+p_grid <- seq( from=0 , to=1 , length.out=1000 ) 
+prior <- rep(1,1000)
+likelihood <- dbinom( 3 , size=3 , prob=p_grid ) 
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+samples <- sample( p_grid , size=1e4 , replace=TRUE , prob=posterior )
+```
+
+```{r}
+PI(samples, prob = 0.5)
+```
+
+
+**Highest Posterior Density Interval (HPDI)**- the narrowest interval containing the specified probability mass. 
+
+```{r}
+HPDI(samples, prob = 0.95)
+```
+HPDI has some advantages over PI, but in most cases they are very similar. 
+
+Only look very different when the posterior distribution is highly skewed. 
+
+some disadvantage: 
+* HPDI is more computational intense than PI and suffers from greater simulation variance. -it is sensitive to how many samples you draw from the posterior 
+
+
+The entire posterior distribution is the Bayesian "estimate:. It summarizes the relative plausibilities of each possible value of the parameter.
+
+#### Why 95%? 
+Generally speaking confidence intervals only communicate the sahpe of a distribution. 
+
+#### What do confidence intervals mean? 
+Common to hear, that a 95% confidence interval means that there is a probability of 0.95 that the true parameter value lies within the interval. In strict non-Bayesian statistical inference, such a statement is never correct, because strict non_Bayesian inference forbids using probability to measure uncertainty about parameters. -> instead one should say that if we repeated the study and analysis a very large number of times, then 95% of the computed intervals would contain the true paramater value. 
+
+### 3.2.3 Point estimates  
+
+The Bayesian parameter estimate is precisely the entire posterior distribution, which is not a single number, but instead a function that maps each unique parameter value onto a plausibility value 
+
+If you need single point: 
+* report the parameter value with highest posterior probability, a maximum a posteriori (MAP) estimate 
+
+```{r}
+p_grid[which.max(posterior)]
+```
+* approximate same point 
+```{r}
+chainmode(samples, adj=0.01)
+```
+
+Why not report the posterior mean or median? 
+```{r}
+mean(samples)
+median(samples)
+```
+
+All of these are acceptable ways to summarize the posterior, however all give different numbers. So what do we have to do? choose a loss function  .
+
+Loss function: A loss function is a rule that tesll you the cost associated with using any particular point estimate. 
+
+different loss functions imply different point estmiates. 
+
+Calculating expected loss for any given decision means using the posterior to average over our uncertainty in the true value. Of course we don't know the true value, in most cases. But if we are going to use our model's information about the parameter, that means using the entire posterior distribution. 
+
+```{r}
+sum(posterior*abs(0.5-p_grid))
+```
+
+```{r}
+loss <- sapply(p_grid, function(d) sum(posterior*abs(d-p_grid)))
+p_grid[which.min(loss)]
+
+```
+
+In order to decide upon a point estimate, a single-value summary of the posterior distribution, we need to pick a loss function. 
+
+Most common loss functions are: absolute loss which leads to the median as the point estimate. 
+quadradic loss $(d-p)^2$ which leads to the posterior mean as the point estimate.
+
+Research scientists don't think about loss functions. And so any point estimate like the mean or MAP that they may report isn't intended to support the decision to make but rather to describe the shape of the posterior. 
+
+## 3.3 Sampling to simulate prediction 
+A common job for samples is to ease simulation of the model's implied observations. 
+
+1. Model design 
+2. Model checking: 
+3. Software validation 
+4. Research design - if you can simulate observations from your hypothesis, then you can evaluate whether the research design can be effective.
+5. Forecasting: Estimates can be used to simulate new predictions, for new cases and future observations. 
+
+### 3.3.1 Dummy Data
+
+In order to simulate this data we use a binomial likelihood. 
+```{r}
+dbinom(0:2, size = 2, prob = 0.7)
+```
+
+There is a 9% chance of observing w = 0, a 42% chance of w = 1 and a 49% chance of w = 2. 
+
+```{r}
+rbinom(1,size = 2, prob = 0.7)
+```
+
+
+So lets generate a size 10 
+```{r}
+
+plot(rbinom(10, size = 2, prob = 0.7))
+```
+
+What about 10,000 dummy observations 
+```{r}
+dummy_w <- rbinom(1e5, size = 2, prob = 0.7)
+table(dummy_w) / 1e5
+```
+
+
+```{r}
+dummy_w <- rbinom(1e5, size = 9, prob = 0.7)
+simplehist(dummy_w, xlab = "dummy water count")
+```
+#### Sample distributions 
+Sampling distributios are the foundation of common non-Bayesian statistical traditions. In those approaches, inference about parameters is made through the sampling distribution. In this book, inference about parameters is never done directly through a sampling distribution. The posterior distribution is not sampled, but deducted logically. Then samples can be drawn from the posterior, as earlier in this chapter to aid in inference. 
+
+### 3.3.2 Model checking 
+Means: 
+1. ensuring the model fitting worked correctly 
+2. evaluating the adequacy of a model for some purpose 
+
+Since Bayesian modesl are always generative, able to simulate observations as well as estimate paratmers from observations, once you condition a model on data, you can simulate to examine the models expectations .
+
+#### 3.3.2.1 Did the software work? 
+* Check whether the software wored by checking for correspondence between implied predictions and the data used to fit the model. 
+
+#### 3.3.2.2 Isthe model adequate? 
+* when verifying the software worked correctly, it is useful to look for aspects of the data that are not well described by the model's expectations. The goal is to assess exactly how the model fails to describe the data. Typically we hope to either predict future observations or understand enough that we might usefully tinker with the world.
+
+Basic model checks: 
+1. observational uncertainty 
+2. uncertainty about p 
+
+
+```{r}
+w <- rbinom(1e4, size = 9, prob = 0.6)
+simplehist(w)
+```
+
+```{r}
+w <- rbinom(1e4, size = 9, prob = samples)
+simplehist(w)
+```
+
+#### What does more extreme mean? 
+Model checking is inherently subjective, and this actually allows it to be quite powerful, since subjective knowledge of an empirical domain provides expertise. Expertise in turn allows for imaginative checks of model performance. 
+
+
+```{r}
+p_grid <- seq( from=0 , to=1 , length.out=1000 ) 
+prior <- rep( 1 , 1000 )
+likelihood <- dbinom( 6 , size=9 , prob=p_grid ) 
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+set.seed(100)
+samples <- sample( p_grid , prob=posterior , size=1e4 , replace=TRUE )
+```
+
+How much posterior probability lies below p = 0.2? 
+```{r}
+sum(samples < 0.2) / 1e4
+```
+```{r}
+sum(samples > 0.8) / 1e4
+```
+
+
+```{r}
+sum(samples > 0.2 & samples < 0.8) / 1e4
+```
+
+3M1
+```{r}
+p_grid <- seq( from=0 , to=1 , length.out=1000 ) 
+prior <- rep( 1 , 1000 )
+likelihood <- dbinom( 8 , size=15 , prob=p_grid ) 
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+set.seed(100)
+samples <- sample( p_grid , prob=posterior , size=1e4 , replace=TRUE )
+```
+
+3.2
+```{r}
+sampling <- sample(samples,1e5,replace=-TRUE)
+HPDI(sampling, prob = 0.95)
+
+```
+
