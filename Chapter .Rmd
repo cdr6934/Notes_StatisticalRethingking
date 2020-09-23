@@ -1,0 +1,10 @@
+---
+title: "Chapter 6: The Haunted DAG & The Causal Terror"
+output: html_notebook
+---
+
+Berkson's paradox: 
+```{r}
+
+```
+

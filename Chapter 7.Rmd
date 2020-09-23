@@ -1,0 +1,524 @@
+---
+title: "Chapter 7: Ulysses' Commpass"
+output: html_notebook
+---
+
+```{r}
+library(rethinking)
+```
+
+Two Fundamental kinds of statistical error: 
+1. The many-headed beast of overfitting, which leads to poor prediction by learning too much from the data
+2. The whirlpool of underfitting, which leads to poor prediction by learning too little from the data 
+
+## 7.1 The problem with parameters 
+
+### 7.1.1 
+More parameters always improve fit 
+
+Overfitting: occurs when a model learns to much from the sample 
+
+```{r}
+sppnames <- c( "afarensis","africanus","habilis","boisei", 
+"rudolfensis","ergaster","sapiens")
+brainvolcc <- c( 438 , 452 , 612, 521, 752, 871, 1350 )
+masskg <- c( 37.0 , 35.5 , 34.5 , 41.5 , 55.5 , 61.0 , 53.5 )
+d <- data.frame( species=sppnames , brain=brainvolcc , mass=masskg )
+```
+
+
+Lets use a number of different models to try and capture the best fit 
+
+```{r}
+d$mass_std <- (d$mass - mean(d$mass))/sd(d$mass)
+d$brain_std <- d$brain/max(d$brain)
+```
+
+Linear Model
+```{r}
+m7.1 <- quap(
+alist(
+brain_std ~ dnorm( mu , exp(log_sigma) ),
+mu <- a + b*mass_std,
+a ~ dnorm( 0.5 , 1 ),
+b ~ dnorm( 0 , 10 ),
+log_sigma ~ dnorm( 0 , 1 )
+), data=d )
+```
+
+
+Lets look at the R2 
+```{r}
+set.seed(12)
+s <- sim( m7.1 )
+r <- apply(s,2,mean) - d$brain_std
+resid_var <- var2(r)
+outcome_var <- var2( d$brain_std )
+1 - resid_var/outcome_var
+```
+
+```{r}
+R2_is_bad <- function( quap_fit ) {
+s <- sim( quap_fit , refresh=0 )
+r <- apply(s,2,mean) - d$brain_std
+1 - var2(r)/var2(d$brain_std)
+}
+```
+
+
+```{r}
+# 2nd degree polynomial 
+m7.2 <- quap( 
+alist(
+brain_std ~ dnorm( mu , exp(log_sigma) ),
+mu <- a + b[1]*mass_std + b[2]*mass_std^2,
+a ~ dnorm( 0.5 , 1 ),
+b ~ dnorm( 0 , 10 ),
+log_sigma ~ dnorm( 0 , 1 )
+), data=d , start=list(b=rep(0,2)) )
+
+
+#3rd degree polyn
+m7.3 <- quap( 
+alist(
+brain_std ~ dnorm( mu , exp(log_sigma) ),
+mu <- a + b[1]*mass_std + b[2]*mass_std^2 +
+b[3]*mass_std^3,
+a ~ dnorm( 0.5 , 1 ),
+b ~ dnorm( 0 , 10 ),
+log_sigma ~ dnorm( 0 , 1 )
+), data=d , start=list(b=rep(0,3)) )
+
+
+#4th degree polyn
+m7.4 <- quap(
+alist(
+brain_std ~ dnorm( mu , exp(log_sigma) ),
+mu <- a + b[1]*mass_std + b[2]*mass_std^2 +
+b[3]*mass_std^3 + b[4]*mass_std^4,
+a ~ dnorm( 0.5 , 1 ),
+b ~ dnorm( 0 , 10 ),
+log_sigma ~ dnorm( 0 , 1 )
+), data=d , start=list(b=rep(0,4)) )
+
+
+#5th degree polyn
+m7.5 <- quap(
+alist(
+brain_std ~ dnorm( mu , exp(log_sigma) ),
+mu <- a + b[1]*mass_std + b[2]*mass_std^2 +
+b[3]*mass_std^3 + b[4]*mass_std^4 +
+b[5]*mass_std^5,
+a ~ dnorm( 0.5 , 1 ),
+b ~ dnorm( 0 , 10 ),
+log_sigma ~ dnorm( 0 , 1 )
+), data=d , start=list(b=rep(0,5)) )
+
+#6th degree polyn and SD is replaced with a constant 0.001 
+m7.6 <- quap(
+alist(
+brain_std ~ dnorm( mu , 0.001 ),
+mu <- a + b[1]*mass_std + b[2]*mass_std^2 +
+b[3]*mass_std^3 + b[4]*mass_std^4 +
+b[5]*mass_std^5 + b[6]*mass_std^6,
+a ~ dnorm( 0.5 , 1 ),
+b ~ dnorm( 0 , 10 )
+), data=d , start=list(b=rep(0,6)) )
+```
+
+
+Now we are able to plot all of the models to see their differences
+
+```{r}
+post <- extract.samples(m7.6)
+mass_seq <- seq( from=min(d$mass_std) , to=max(d$mass_std) , length.out=100 )
+l <- link( m7.6 , data=list( mass_std=mass_seq ) )
+mu <- apply( l , 2 , mean )
+ci <- apply( l , 2 , PI )
+plot( brain_std ~ mass_std , data=d )
+lines( mass_seq , mu )
+shade( ci , mass_seq )
+```
+
+
+The point above is to show how the R2 for most of these models become increasingly higher; however the overfitting will hurt the overall prediction of the model .
+
+
+
+## 7.1.2 Too few parameters hurt also 
+
+```{r}
+m7.7 <- quap(
+alist(
+brain_std ~ dnorm( mu , exp(log_sigma) ),
+mu <- a,
+a ~ dnorm( 0.5 , 1 ),
+log_sigma ~ dnorm( 0 , 1 )
+), data=d )
+```
+
+
+### 7.2.1 Firing the weatherperson 
+
+Accuracy dependsupon the defintion of the target, and there is no unique best target. 
+
+1. Cost benefit analysis
+2. Accuracy in context
+
+
+
+If we can develop a precise definition of "uncertainty", we can provide a baseline measure of how hard it is to predict, as well as how much iprovement is possible. 
+
+Information: The reduction in uncertainty derived from learning an outcome. 
+
+How do we measure uncertainty: 
+
+(1) The measure of uncertainty should be continuous. If it were not, then an arbitrarily
+small change in any of the probabilities, for example the probability of rain, would
+result in a massive change in uncertainty.
+
+(2) The measure of uncertainty should increase as the number of possible events increases.
+For example, suppose there are two cities that need weather forecasts. In
+the first city, it rains on half of the days in the year and is sunny on the others. In
+the second, it rains, shines, and hails, each on 1 out of every 3 days in the year. We’d
+like our measure of uncertainty to be larger in the second city, where there is one
+more kind of event to predict.
+
+(3) The measure of uncertainty should be additive. What this means is that if we first
+measure the uncertainty about rain or shine (2 possible events) and then the uncertainty
+about hot or cold (2 different possible events), the uncertainty over the four
+combinations of these events—rain/hot, rain/cold, shine/hot, shine/cold—should
+be the sum of the separate uncertainties.
+
+
+If there are n different possible events and each event i has probability p_i, and we call the list of probabilities p, then the unique measure of uncertainty we seek 
+$$
+H(p) = -E\log(p_i)=-\Sigma^{n}_{i=1}p_i\log(p_i)
+$$
+Or the uncertainy contained in a probability distribution is the average log-probability of an event. 
+
+```{r}
+# Rain p_1 and sunshine p_2
+p <- c(0.3,0.7)
+-sum(p*log(p))
+
+
+# Rain p_1 and sunshine p_2
+p <- c(0.01,0.99)
+-sum(p*log(p))
+```
+
+Between the two cases; the uncertainty comes from there to be a higher certainty of rain vs not. 
+
+
+Maximizing Uncertainty 
+Information theory has many applications.
+A particularly important application is maximum entropy, also known as maxent. Maximum
+entropy is a family of techniques for finding probability distributions that are most consistent with states of knowledge. In other words, given what we know, what is the least surprising distribution?
+It turns out that one answer to this question maximizes the information entropy, using the prior
+knowledge as constraint. Maximum entropy features prominently in Chapter 10, where it will help
+us build generalized linear models (GLMs).
+
+### 7.2.3 From entropy to accuracy 
+Divergence: The additinal uncertainty induced by using pobabilities from one distribution to describe another distribution (a.k.a. Kullback-Leibler divergence)
+
+$$
+D_{KL}(p,q)=\Sigma_i(\log(p_i)-log(q_i))=\Sigma_ip_i\log(\frac{p_i}{q_i})
+$$
+
+Or the divergence is the average difference in log probability between the target (p) and model (q).
+
+```{r}
+set.seed(1) 
+lppd( m7.1 , n=1e4 )
+```
+
+```{r}
+set.seed(1)
+sapply( list(m7.1,m7.2,m7.3,m7.4,m7.5,m7.6) , function(m) sum(lppd(m)) )
+```
+
+Test Sample 
+
+(1) Suppose there’s a training sample of size N.
+(2) Compute the posterior distribution of a model for the training sample, and compute
+the score on the training sample. Call this score Dtrain.
+(3) Suppose another sample of size N from the same process. This is the test sample.
+(4) Compute the score on the test sample, using the posterior trained on the training
+sample. Call this new score Dtest.
+
+
+Following we are running the models using simulated information to see what these data variance look like. 
+
+### Otherthinking: Simulated Training and testing 
+
+```{r}
+N <- 20
+kseq <- 1:5
+dev <- sapply( kseq , function(k) {
+print(k);
+r <- mcreplicate( 1e4 , sim_train_test( N=N, k=k ) , mc.cores=4 )
+c( mean(r[1,]) , mean(r[2,]) , sd(r[1,]) , sd(r[2,]) )
+} )
+```
+
+```{r}
+plot( 1:5 , dev[1,] , ylim=c( min(dev[1:2,])-5 , max(dev[1:2,])+10 ) ,
+xlim=c(1,5.1) , xlab="number of parameters" , ylab="deviance" ,
+pch=16 , col=rangi2 )
+mtext( concat( "N = ",N ) )
+points( (1:5)+0.1 , dev[2,] )
+for ( i in kseq ) {
+pts_in <- dev[1,i] + c(-1,+1)*dev[3,i]
+pts_out <- dev[2,i] + c(-1,+1)*dev[4,i]
+lines( c(i,i) , pts_in , col=rangi2 )
+lines( c(i,i)+0.1 , pts_out )
+}
+```
+
+
+
+
+Deviance is an assessment of predictive accuracy, not of truth. The true model, in terms of which predictors are included is not guaranteed to produce the best predictions. Likewise a false model, in terms of which predictors are included, is not guaranteed to produce poor predictions. 
+
+## 7.3 Golem Taming: Regularization 
+
+
+## 7.4 Predicting predictive accuracy 
+
+### 7.4.1 Cross Validation 
+Cross Validation -- leaving out a small chunk of obserations from our sample and evaluating the model on the observations that were left out. 
+
+How many folds? 
+A lot of advice states that both too few and too many folds produce less reliable approximations of out of sample performance. 
+
+LOOCV - leave out out cross validation 
+* Key trouble of LOOCV is that,if we have 1000 observations, that means computing 1000 posterior distributions. 
+
+LOOIS - Pareto-Smoothed importance sampling leave one out cross validation
+
+## 7.4.2 Information Critera 
+For ordinary linear regressions with flat priors, the expected overfitting penaty is about twice the number of parameters .
+
+AIC - Akaike information criterion
+$$
+AIC=D_{train}+2p=-2lppd+2p
+$$
+
+p = the number of free parameters in the posterior distribution 
+
+AIC approximation is reliable obly when: 
+(1) The priors are flat or overwhelmed by the likelihood.
+(2) The posterior distribution is approximately multivariate Gaussian.
+(3) The sample size N is much greater105 than the number of parameters  k. 
+
+WAIC - Widely Applicable Information Critrion (a.k.a. Effective Number of Parameters)- makes no assu tion about the shape of the posterior. It proviedes an approximation of the out of sample deviance that converges tothe leave one out cross validation approximation in a large ssample. 
+
+$$
+WAIC(y,\Theta)=-2(lppd-\Sigma{var_{\Theta}\log{p (y_i|\Theta)}})
+$$
+y = the observations 
+$\Theta$ is the posterior distribution
+
+Essentially you canthink of each obseration as having its own personal pental score. Since these scores measure overfitting risk, you an also assess overfitting risk at the level of each observation. 
+
+### How do WAIC calculations work 
+```{r}
+data(cars) 
+m <- quap(
+alist(
+dist ~ dnorm(mu,sigma),
+mu <- a + b*speed,
+a ~ dnorm(0,100),
+b ~ dnorm(0,10),
+sigma ~ dexp(1)) , data=cars )
+set.seed(94)
+post <- extract.samples(m,n=1000)
+
+n_samples <- 1000
+logprob <- sapply( 1:n_samples ,
+function(s) {
+mu <- post$a[s] + post$b[s]*cars$speed
+dnorm( cars$dist , mu , post$sigma[s] , log=TRUE )
+} )
+
+n_cases <- nrow(cars)
+lppd <- sapply( 1:n_cases , function(i) log_sum_exp(logprob[i,]) - log(n_samples) )
+
+pWAIC <- sapply( 1:n_cases , function(i) var(logprob[i,]) )
+
+-2*( sum(lppd) - sum(pWAIC) )
+
+waic_vec <- -2*( lppd - pWAIC )
+sqrt( n_cases*var(waic_vec) )
+```
+
+
+### 7.4.3 Comparing LOOCV, LOOIS, WAIC
+
+
+## 7.5 Using cross-validation and information criteria 
+
+Model Comparision: This is a more general approach that uses multiple models to understand both how different viarables influence predictions and in combinations with a causal model, implied conditional indendencies among variables help us infer causal relationship. 
+
+### 7.5.1 Model mis-selection 
+
+```{r}
+set.seed(1)
+WAIC(m6.7)
+```
+
+
+In order to compare multiple models:
+```{r}
+set.seed(77)
+compare(m6.6, m6.7, m6.8)
+```
+
+```{r}
+set.seed(91) 
+waic_m6.6 <- WAIC( m6.6 , pointwise=TRUE )
+waic_m6.7 <- WAIC( m6.7 , pointwise=TRUE )
+waic_m6.8 <- WAIC( m6.8 , pointwise=TRUE )
+n <- length(waic_m6.6)
+diff_m6.7_m6.8 <- waic_m6.7 - waic_m6.8
+diff_m6.7_m6.8
+```
+```{r}
+a <- compare(m6.6, m6.7, m6.8)
+
+
+```
+```{r}
+set.seed(92)
+waic_m6.6 <- WAIC( m6.6 , pointwise=TRUE )
+diff_m6.6_m6.8 <- waic_m6.6 - waic_m6.8
+sqrt( n*var( diff_m6.6_m6.8 ) )
+
+
+set.seed(93)
+compare( m6.6 , m6.7 , m6.8 )@dSE
+```
+
+The matrix contains all of the pairwise difference standard errors for the models you compared. Notice that the standard error of the difference for m6.6 and m6.8 is bigger than the difference itself. 
+
+This result just echoes the core fact about WAIC (and LOOCV and LOOIS): it guesses predictive accuracy, not causal truth. 
+
+dWAIC - a quick way to see how big the differences are among models. 
+
+Modelling averaging - model averaging is a family of methods for combining the predictions of multiple models. 
+
+Think of models as stones thrown to skip on a pond. No stone will ever reach the other side (perfect prediction), but some sorts of stones make it farther than others, on average (make better test predictions). But on any individual throw, lots of unique conditions avail—the wind might pick up or change direction, a duck could surface to intercept the stone, or the thrower’s grip might slip. So which stone will go farthest is not certain. Still, the relative distances reached by each stone therefore provide information about which stone will do best on average. But we can’t be too confident about any individual stone, unless the distances between stones is very large.
+
+
+### 7.5.2 Something about Cebus
+
+```{r}
+data(Primates301)
+d <- Primates301
+
+
+# Data Cleansing
+d$log_L <- scale( log(d$longevity) )
+d$log_B <- scale( log(d$brain) )
+d$log_M <- scale( log(d$body) )
+
+sapply( d[,c("log_L","log_B","log_M")] , function(x) sum(is.na(x)) )
+
+d2 <- d[ complete.cases( d$log_L , d$log_M , d$log_B ) , ] 
+nrow(d2)
+
+```
+
+```{r}
+m7.8 <- quap( alist(
+  log_L ~ dnorm( mu , sigma ),
+  mu <- a + bM*log_M + bB*log_B,
+  a ~ dnorm(0,0.1),
+  bM ~ dnorm(0,0.5),
+  bB ~ dnorm(0,0.5),
+  sigma ~ dexp(1)
+) , data=d2 )
+
+m7.9 <- quap( 
+alist(log_L ~ dnorm( mu , sigma ),
+mu <- a + bB*log_B,
+a ~ dnorm(0,0.1),
+bB ~ dnorm(0,0.5),
+sigma ~ dexp(1)
+) , data=d2 )
+
+
+m7.10 <- quap(
+alist(
+log_L ~ dnorm( mu , sigma ),
+mu <- a + bM*log_M,
+a ~ dnorm(0,0.1),
+bM ~ dnorm(0,0.5),
+sigma ~ dexp(1)
+) , data=d2 )
+```
+
+
+```{r}
+set.seed(301)
+compare( m7.8 , m7.9 , m7.10 )
+```
+```{r}
+plot( compare( m7.8 , m7.9 , m7.10 ) )
+```
+
+Comparin the posterior distribution
+```{r}
+a <- coeftab( m7.8 , m7.9 , m7.10 ) 
+coeftab_plot( a, par=c("bM","bB"))
+```
+```{r}
+plot( d2$log_B , d2$log_M )
+```
+
+```{r}
+waic_m7.8 <- WAIC( m7.8 , pointwise=TRUE )
+waic_m7.9 <- WAIC( m7.9 , pointwise=TRUE )
+
+str(waic_m7.8)
+
+```
+
+```{r}
+# compute point scaling
+x <- d2$log_B - d2$log_M
+x <- x - min(x)
+x <- x / max(x)
+# draw the plot
+waic_diff <- waic_m7.8 - waic_m7.9
+plot( 
+  waic_diff, 
+    d2$log_L,
+    pch=21 ,
+    col=col.alpha("black",0.8) , 
+    cex=1+x , 
+    lwd=2 , 
+    bg=col.alpha(rangi2,0.4) 
+)
+
+abline( v=0 , lty=2 )
+abline( h=0 , lty=2 )
+```
+
+
+What if we consider a model that treats brain size as the outcome and conditions instead of body size and longevity ```{r}
+
+```{r}
+m7.11 <- quap(
+alist(
+log_B ~ dnorm( mu , sigma ),
+mu <- a + bM*log_M + bL*log_L,
+a ~ dnorm(0,0.1),
+bM ~ dnorm(0,0.5),
+bL ~ dnorm(0,0.5),
+sigma ~ dexp(1)
+) , data=d2 )
+precis( m7.11 )
+```
+

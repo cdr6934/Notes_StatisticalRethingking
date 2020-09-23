@@ -1,0 +1,478 @@
+---
+title: "The Many Variables & Spurious Waffles"
+output: html_notebook
+---
+
+Since most correlations do not indicate causal relationships, we need tools for distinguishing mere assoication from evidence of causation. 
+
+1. 
+
+A confound is a variable that may be correlated with another variable of interest. 
+
+Multiple regressions 
+* Statistical control for confounds 
+
+```{r}
+library(rethinking)
+library(dagitty)
+data(WaffleDivorce)
+d <- WaffleDivorce
+# standardize variables
+d$A <- scale( d$MedianAgeMarriage )
+d$D <- scale( d$Divorce )
+
+```
+
+```{r}
+sd(d$MedianAgeMarriage)
+```
+
+```{r}
+m5.1 <- quap(
+alist(
+D ~ dnorm( mu , sigma ) ,
+mu <- a + bA * A ,
+a ~ dnorm( 0 , 0.2 ) ,
+bA ~ dnorm( 0 , 0.5 ) ,
+sigma ~ dexp( 1 )
+) , data = d )
+```
+
+```{r}
+set.seed(10)
+prior <- extract.prior( m5.1 )
+mu <- link( m5.1 , post=prior , data=list( A=c(-2,2) ) )
+plot( NULL , xlim=c(-2,2) , ylim=c(-2,2) )
+for ( i in 1:50 ) lines( c(-2,2) , mu[i,] , col=col.alpha("black",0.4) )
+```
+
+```{r}
+A_seq <- seq( from=-3 , to=3.2 , length.out=30 )
+mu <- link( m5.1 , data=list(A=A_seq) )
+mu.mean <- apply( mu , 2, mean )
+mu.PI <- apply( mu , 2 , PI )
+# plot it all
+plot( D ~ A , data=d , col=rangi2 )
+lines( A_seq , mu.mean , lwd=2 )
+shade( mu.PI , A_seq )
+```
+
+```{r}
+d$M <- scale( d$Marriage )
+
+m5.2 <- quap(
+alist(
+D ~ dnorm( mu , sigma ) ,
+mu <- a + bM * M ,
+a ~ dnorm( 0 , 0.2 ) ,
+bM ~ dnorm( 0 , 0.5 ) ,
+sigma ~ dexp( 1 )
+) , data = d )
+```
+
+### 5.1.1 Think before you regress
+```{r}
+
+
+dag5.1 <- dagitty( "dag {
+A -> D
+A -> M
+M -> D
+}")
+coordinates(dag5.1) <- list( x=c(A=0,D=1,M=2) , y=c(A=0,D=1,M=0) )
+plot( dag5.1 )
+```
+
+# 5.1.2 Multiple Regression Notation 
+
+1. Nominate the predictor variables you want in the linear model of the mean
+2. For each predictor, make a parameter that will measure its association with the outcome
+3. Multiply the parameter by the variable and add that term to the linear model 
+
+Linear models can be written in a compact fom like: 
+
+$$
+\mu_i=\alpha+\sum_{j=1}^{n}\beta_jx_{ji}
+$$
+or 
+$$
+m=Xb
+$$
+### 5.1.3 Approximating the posterior 
+```{r}
+m5.3 <- quap( 
+alist(
+D ~ dnorm( mu , sigma ) ,
+mu <- a + bM*M + bA*A ,
+a ~ dnorm( 0 , 0.2 ) ,
+bM ~ dnorm( 0 , 0.5 ) ,
+bA ~ dnorm( 0 , 0.5 ) ,
+sigma ~ dexp( 1 )
+) , data = d )
+precis( m5.3 )
+```
+```{r}
+a <- coeftab(m5.1,m5.2,m5.3)
+coeftab_plot(a , par=c("bA","bM") )
+```
+
+I think there is a very important piece of what we are trying to do when tweezing out what variables are running the show. Here we have run the 3 regressions against each other and looking at their posteriors for each of the models. 
+
+* m5.1 is looking at age 
+* m5.2 is looking at marriage rate 
+* m5.3 is looking at both age and marriage rate
+
+After we run the plot above for each of the models we are able to see that the effect that age doesn't change outside of the variance. Thus...
+once we know median age of marriage for a state, there is little or no additional predictive power in also knowing the rate of marriage in that state. 
+
+Put another way, all this implies is there is no, or almost no, direct causal path from marriage rate to divource rate. The association between marriage rate and divource rate is spurious, caused by the influence of age of marriage on both marriage rate and divoure rate is spurious, caused by the influence of age of marriage on both marriage rate and divorce rate. 
+
+### 5.1.4 Plotting multivariable posteriors
+
+predict the individual observations.
+With multivariate regression, you’ll need more plots. There is a huge literature detailing
+a variety of plotting techniques that all attempt to help one understand multiple linear
+regression. None of these techniques is suitable for all jobs, and most do not generalize beyond
+linear regression. So the approach I take here is to instead help you compute whatever
+you need from the model. I offer three types of interpretive plots:
+
+(1) Predictor residual plots. These plots show the outcome against residual predictor
+values.
+
+(2) Counterfactual plots. These show the implied predictions for imaginary experiments
+in which the different predictor variables can be changed independently of
+one another.
+
+(3) Posterior prediction plots. These show model-based predictions against raw data,
+or otherwise display the error in prediction.
+
+
+### 5.1.4.1 Predictor residual plots 
+
+```{r}
+m5.4 <- quap(
+alist(
+M ~ dnorm( mu , sigma ) ,
+mu <- a + bAM * A ,
+a ~ dnorm( 0 , 0.2 ) ,
+bAM ~ dnorm( 0 , 0.5 ) ,
+sigma ~ dexp( 1 )
+) , data = d )
+```
+
+```{r}
+mu <- link(m5.4)
+mu_mean <- apply( mu , 2 , mean )
+mu_resid <- d$M - mu_mean
+```
+
+
+
+
+5.1.4.2 Counterfactual Plot 
+```{r}
+# prepare new counterfactual data
+M_seq <- seq( from=-2 , to=3 , length.out=30 )
+pred_data <- data.frame( M = M_seq , A = 0 )
+# compute counterfactual mean divorce (mu)
+mu <- link( m5.3 , data=pred_data )
+mu_mean <- apply( mu , 2 , mean )
+mu_PI <- apply( mu , 2 , PI )
+# simulate counterfactual divorce outcomes
+D_sim <- sim( m5.3 , data=pred_data , n=1e4 )
+D_PI <- apply( D_sim , 2 , PI )
+# display predictions, hiding raw data with type="n"
+plot( D ~ M , data=d , type="n" )
+mtext( "Median age marriage (std) = 0" )
+lines( M_seq , mu_mean )
+shade( mu_PI , M_seq )
+shade( D_PI , M_seq )
+```
+
+The strategy above is to build a new list of data that describe the counterfactual cases we wish to simulate predictions for. 
+
+
+### 5.1.4.3 Posterior prediction plots 
+
+1. Did the model correctly approximate the posterior distribution? Golems do make
+mistakes, as do golem engineers. Errors can be more easily diagnosed by comparing
+implied predictions to the raw data. Some caution is required, because not all
+models try to exactly match the sample. But even then, you’ll know what to expect
+from a successful approximation. You’ll see some examples later (Chapter ??).
+
+2. How does the model fail? All models are useful fictions, so they always fail in some
+way. Sometimes, the model fits correctly but is still so poor for our purposes that it
+must be discarded. More often, a model predicts well in some respects, but not in
+others. By inspecting the individual cases where the model makes poor predictions,
+you might get an idea of how to improve the model. The difficulty is that this mode
+is essentially creative and relies upon the analysts domain expertise. It also creates
+
+```{r}
+# call link without specifying new data
+# so it uses original data
+mu <- link( m5.3 )
+# summarize samples across cases
+mu_mean <- apply( mu , 2 , mean )
+mu_PI <- apply( mu , 2 , PI )
+# simulate observations
+# again no new data, so uses original data
+D_sim <- sim( m5.3 , n=1e4 )
+D_PI <- apply( D_sim , 2 , PI )
+
+plot( mu_mean ~ d$D , col=rangi2 , ylim=range(mu_PI) ,
+xlab="Observed divorce" , ylab="Predicted divorce" )
+abline( a=0 , b=1 , lty=2 )
+for ( i in 1:nrow(d) ) lines( rep(d$D[i],2) , mu_PI[,i] , col=rangi2 )
+
+identify( x=d$D , y=mu_mean , labels=d$Loc )
+```
+
+In this example, the difficulty of separately manipulating marriage rate and marriage age doesn’t impede inference much, only because marriage rate has almost no effect on prediction, once median age of marriage is taken into account.
+
+## Simulation spurious association
+```{r}
+N <- 100 # number of cases
+x_real <- rnorm( N ) # x_real as Gaussian with mean 0 and stddev 1
+x_spur <- rnorm( N , x_real ) # x_spur as Gaussian with mean=x_real
+y <- rnorm( N , x_real ) # y as Gaussian with mean=x_real
+d <- data.frame(y,x_real,x_spur) # bind all together in data frame
+d
+```
+
+## 5.2 Masked relationship 
+```{r}
+data(milk)
+d <- milk 
+str(d)
+
+
+# Scale the information between the datapoints in order to create a dataset ready to model on
+d$K <- scale(d$kcal.per.g)
+d$N <- scale(d$neocortex.perc)
+d$M <- scale(log(d$mass))
+```
+
+
+First model to onsider the simple bivariate regression between kilocalories and neocortex percent. 
+$$
+K_i~Normal(\mu_i,\sigma)
+$$
+$$
+\mu_i  =\alpha+\beta_NN_i
+$$
+```{r}
+m5.5_draft <- quap( 
+alist(
+K ~ dnorm( mu , sigma ) ,
+mu <- a + bN*N ,
+a ~ dnorm( 0 , 1 ) ,
+bN ~ dnorm( 0 , 1 ) ,
+sigma ~ dexp( 1 )
+) , data=d )
+```
+```{r}
+d$neocortex.perc
+```
+
+There are missing values 
+
+```{r}
+dcc <- d[complete.cases(d$K,d$N,d$M),]
+
+m5.5_draft <- quap(
+alist(
+K ~ dnorm( mu , sigma ) ,
+mu <- a + bN*N ,
+a ~ dnorm( 0 , 1 ) ,
+bN ~ dnorm( 0 , 1 ) ,
+sigma ~ dexp( 1 )
+) , data=dcc )
+```
+
+```{r}
+prior <- extract.prior( m5.5_draft )
+xseq <- c(-2,2)
+mu <- link( m5.5_draft , post=prior , data=list(N=xseq) )
+plot( NULL , xlim=xseq , ylim=xseq )
+for ( i in 1:50 ) lines( xseq , mu[i,] , col=col.alpha("black",0.3) )
+```
+
+```{r}
+m5.5 <- quap( 
+alist(
+K ~ dnorm( mu , sigma ) ,
+mu <- a + bN*N ,
+a ~ dnorm( 0 , 0.2 ) ,
+bN ~ dnorm( 0 , 0.5 ) ,
+sigma ~ dexp( 1 )
+) , data=dcc )
+```
+
+```{r}
+precis(m5.5)
+```
+```{r}
+xseq <- seq( from=min(dcc$N)-0.15 , to=max(dcc$N)+0.15 , length.out=30 )
+mu <- link( m5.5 , data=list(N=xseq) )
+mu_mean <- apply(mu,2,mean)
+mu_PI <- apply(mu,2,PI)
+plot( K ~ N , data=dcc )
+lines( xseq , mu_mean , lwd=2 )
+shade( mu_PI , xseq )
+```
+
+Consider another predictor variable, adult female body mass, mass in the data frame. 
+```{r}
+m5.6 <- quap(
+alist(
+K ~ dnorm( mu , sigma ) ,
+mu <- a + bM*M ,
+a ~ dnorm( 0 , 0.2 ) ,
+bM ~ dnorm( 0 , 0.5 ) ,
+sigma ~ dexp( 1 )
+) , data=dcc )
+precis(m5.6)
+
+```
+Log-mass is negatively correlated with kilocalories. This influence does seem stronger than that of neocortex percent, although in the opposite direction.
+
+```{r}
+m5.7 <- quap(
+alist(
+K ~ dnorm( mu , sigma ) ,
+mu <- a + bN*N + bM*M ,
+a ~ dnorm( 0 , 0.2 ) ,
+bN ~ dnorm( 0 , 0.5 ) ,
+bM ~ dnorm( 0 , 0.5 ) ,
+sigma ~ dexp( 1 )
+) , data=dcc )
+precis(m5.7)
+```
+
+
+By incorporating both predictor variables in the regression, the posterior association of both with the outcome has increased. Visually comparing this posterior to those of the previous two models helps
+
+```{r}
+a <- coeftab(m5.5 , m5.6 , m5.7 )
+coeftab_plot(a , par=c("bM","bN") )
+
+```
+
+
+
+```{r}
+pairs( ~K + M + N , dcc )
+```
+
+```{r}
+xseq <- seq( from=min(dcc$M)-0.15 , to=max(dcc$M)+0.15 , length.out=30 ) 
+mu <- link( m5.7 , data=data.frame( M=xseq , N=0 ) )
+mu_mean <- apply(mu,2,mean)
+mu_PI <- apply(mu,2,PI)
+plot( NULL , xlim=range(dcc$M) , ylim=range(dcc$K) )
+lines( xseq , mu_mean , lwd=2 )
+shade( mu_PI , xseq )
+```
+
+```{r}
+
+# M -> K <- N
+# M -> N
+n <- 100
+M <- rnorm( n )
+N <- rnorm( n , M )
+K <- rnorm( n , N - M )
+d_sim <- data.frame(K=K,N=N,M=M)
+
+#M -> K <- N
+# N -> M
+n <- 100
+N <- rnorm( n )
+M <- rnorm( n , N )
+K <- rnorm( n , N - M )
+d_sim2 <- data.frame(K=K,N=N,M=M)
+
+# M -> K <- N
+# M <- U -> N
+n <- 100
+U <- rnorm( n )
+N <- rnorm( n , U )
+M <- rnorm( n , U )
+K <- rnorm( n , N - M )
+d_sim3 <- data.frame(K=K,N=N,M=M)
+
+```
+
+### 5.3 Categorical variable 
+
+```{r}
+d <- Howell1
+str(d)
+```
+
+Indicator variable: sometimes also called "dummy" variables - are divices for encoding unordered catgories into quantitative models. There is no sense here in which "male" is one more than categories into quantitative models. 
+
+```{r}
+mu_female <- rnorm(1e4,178,20)
+mu_male <- rnorm(1e4,178,20) + rnorm(1e4,0,10)
+precis( data.frame( mu_female , mu_male ) )
+```
+
+```{r}
+d$sex <- ifelse( d$male==1 , 2 , 1 )
+str( d$sex )
+```
+
+```{r}
+m5.8 <- quap( 
+alist(
+height ~ dnorm( mu , sigma ) ,
+mu <- a[sex] ,
+a[sex] ~ dnorm( 178 , 20 ) ,
+sigma ~ dunif( 0 , 50 )
+) , data=d )
+precis( m5.8 , depth=2 )
+```
+
+```{r}
+post <- extract.samples(m5.8) 
+post$diff_fm <- post$a[,1] - post$a[,2]
+precis( post , depth=2 )
+```
+
+### 5.3.2 Many categories
+```{r}
+d <- milk
+unique(d$clade)
+d$clade_id <- as.integer(d$clade)
+```
+
+```{r}
+d$K <- scale( d$kcal.per.g )
+m5.9 <- quap(
+  alist(
+    K ~ dnorm(mu, sigma),
+    mu <- a[clade_id],
+    a[clade_id] ~ dnorm(0 ,0.5),
+    sigma ~ dexp(1))
+, data=d)
+
+labels <- paste( "a[" , 1:4 , "]:" , levels(d$clade) , sep="" )
+plot(precis(m5.9 , depth=2 , pars="a") , labels=labels)
+```
+
+
+```{r}
+set.seed(63)
+d$house <- sample( rep(1:4,each=8) , size=nrow(d) )
+
+m5.10 <- quap( 
+alist(
+K ~ dnorm( mu , sigma ),
+mu <- a[clade_id] + h[house],
+a[clade_id] ~ dnorm( 0 , 0.5 ),
+h[house] ~ dnorm( 0 , 0.5 ),
+sigma ~ dexp( 1 )
+) , data=d )
+```
+
