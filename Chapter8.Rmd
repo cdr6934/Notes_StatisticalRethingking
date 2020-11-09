@@ -169,3 +169,215 @@ $\mu_i$
 $$
 \mu_i=\alpha_{CID[i]}+\beta(r_i-\bar{r})
 $$
+
+```{r}
+m8.5 <- quap(
+alist(
+log_gdp_std ~ dnorm( mu , sigma ) ,
+mu <- a[cid] + b[cid]*( rugged_std - 0.215 ) ,
+a[cid] ~ dnorm( 1 , 0.1 ) ,
+b[cid] ~ dnorm( 0 , 0.3 ) ,
+sigma ~ dexp( 1 )
+) ,
+data=dd )
+```
+
+```{r}
+precis(m8.5, depth = 2)
+```
+
+```{r}
+compare(m8.3, m8.4, m8.5)
+```
+
+The simplest approximation of how sensitive a model is to the sample and therefore the overfitting risk is just the variance in log-probability. The effective number of parameters is then the variance in log-probability, summed over all cases in the sample. 
+
+```{r}
+waic_list <- WAIC(m8.5, pointwise=TRUE)
+waic_list
+```
+
+Wheather we use regularizing priors or information criteria or something else, its always worth worrying about overfitting and measuring it if possible. 
+
+### 8.1.4 Plotting the interaction 
+```{r}
+plot( d.A1$rugged_std , d.A1$log_gdp_std , pch=16 , col=rangi2 ,
+xlab="ruggedness (standardized)" , ylab="log GDP (as proportion of mean)" ,
+xlim=c(0,1) )
+
+mu <- link( m8.5 , data=data.frame( cid=1 , rugged_std=rugged_seq ) )
+mu_mean <- apply( mu , 2 , mean )
+mu_ci <- apply( mu , 2 , PI , prob=0.97 )
+lines( rugged_seq , mu_mean , lwd=2 )
+shade( mu_ci , rugged_seq , col=col.alpha(rangi2,0.3) )
+mtext("African nations")
+# plot non-Africa - cid=2
+plot( d.A0$rugged_std , d.A0$log_gdp_std , pch=1 , col="black" ,
+xlab="ruggedness (standardized)" , ylab="log GDP (as proportion of mean)" ,
+xlim=c(0,1) )
+mu <- link( m8.5 , data=data.frame( cid=2 , rugged_std=rugged_seq ) )
+mu_mean <- apply( mu , 2 , mean )
+mu_ci <- apply( mu , 2 , PI , prob=0.97 )
+lines( rugged_seq , mu_mean , lwd=2 )
+shade( mu_ci , rugged_seq )
+mtext("Non-African nations")
+
+
+```
+ The slope reverses direction inside and outside of Africa. And because we achieved this inside a single model, we could statistically evaluate the value of this reversal. 
+ 
+ In this case, we can see that the interaction either for ruggedness or GDP are both equally valid phrasings. 
+ 
+ 
+## 8.2 Symmetry of Interactions 
+
+Since we have the equal interactions, how do we gauge which is more important than the other. In order to do this, we ask ourselves the following: 
+
+1. How much does the association between ruggedness and log GDP depend upon whether the nation is in Africa? 
+2. How much does the assocation of Africa with log GDP depend upon ruggedness? 
+
+We will plot again as we did above; however we are going to ask the same question again in different context: 
+* the association betwee Africa and GDP depends on ruggedness: 
+ 
+```{r}
+rugged_seq <- seq(from=-0.2,to=1.2,length.out=30)
+muA <- link( m8.5 , data=data.frame(cid=1,rugged_std=rugged_seq) )
+muN <- link( m8.5 , data=data.frame(cid=2,rugged_std=rugged_seq) )
+delta <- muA - muN
+```
+
+## 8.3 Continuous Interactions
+"Interaction effects are difficult to interpret" 
+
+Once interactions exist, multiple parameters are always in play at the same time. 
+
+### 8.3.1 A Winter Flower
+```{r}
+data(tulips)
+d <- tulips
+str(d)
+```
+
+
+Since both light and water help plants grow and produce blooms, it stands to reason that
+the independent effect of each will be to produce bigger blooms. But we’ll also be interested
+in the interaction between these two variables. In the absence of light, for example, it’s hard
+to see how water will help a plant—photosynthesis depends upon both light and water. Likewise,
+in the absence of water, sunlight does a plant little good. One way to model such an
+interdependency is to use an interaction effect. In the absence of a good mechanistic model
+of the interaction, one that uses a theory about the plant’s physiology to hypothesize the
+functional relationship between light and water, then a simple linear two-way interaction is
+a good start.
+
+### 8.3.2 The models 
+Lets look at two models: 
+1. The model with both water and shade but no interaction
+2. The moel that also contains the interaction of water with shade 
+
+$$
+b_i ~ Normal(\mu_i, \sigma)
+$$
+$$
+\mu_i = \alpha + \beta_w(w_i-\bar{w})+\beta_s(s_i-\bar{s})
+$$
+
+
+Lets precenter these variables, as well as scale the outcome by their maximum 
+```{r}
+d$blooms_std <- d$blooms / max(d$blooms)
+d$water_cent <- d$water - mean(d$water)
+d$shade_cent <- d$shade - mean(d$shade)
+```
+
+We scaled the data for 3 reasons: 
+
+1. the large values on the raw scale will make optimization difficutl 
+2. It will be easier to assign a reasonable prior this way 
+3. We don't want to standardize blooms, because 0 is a meaningful boundary we want to preserve 
+
+The prior bounds on the parameters come from the prior distribution
+```{r}
+a <- rnorm( 1e4 , 0.5 , 1 )
+sum( a < 0 | a > 1 ) / length( a )
+```
+
+```{r}
+a <- rnorm( 1e4 , 0.5 , 0.25 ) 
+sum( a < 0 | a > 1 ) / length( a )
+```
+
+```{r}
+m8.6 <- quap( 
+alist(
+blooms_std ~ dnorm( mu , sigma ) ,
+mu <- a + bw*water_cent + bs*shade_cent ,
+a ~ dnorm( 0.5 , 0.25 ) ,
+bw ~ dnorm( 0 , 0.25 ) ,
+bs ~ dnorm( 0 , 0.25 ) ,
+sigma ~ dexp( 1 )
+) ,
+data=d )
+```
+
+```{r}
+m8.7 <- quap(
+alist(
+blooms_std ~ dnorm( mu , sigma ) ,
+mu <- a + bw*water_cent + bs*shade_cent + bws*water_cent*shade_cent ,
+a ~ dnorm( 0.5 , 0.25 ) ,
+bw ~ dnorm( 0 , 0.25 ) ,
+bs ~ dnorm( 0 , 0.25 ) ,
+bws ~ dnorm( 0 , 0.25 ) ,
+sigma ~ dexp( 1 )
+) ,
+data=d )
+```
+
+### 8.3.3 Plotting posterior predictions 
+But in previous chapters, there were no interactions. As
+a result, when plotting model predictions as a function of any one predictor, you could hold
+the other predictors constant at any value you liked. So the choice of which values to set the
+un-viewed predictor variables to hardly mattered.
+
+
+Once there are interactions in a model, the effect of changing
+a predictor depends upon the values of the other predictors. Maybe the simplest way to go
+about plotting such interdependency is to make a frame of multiple bivariate plots. In each
+plot, you choose different values for the un-viewed variables. Then by comparing the plots
+to one another, you can see how big of a difference the changes make.
+
+```{r}
+
+par(mfrow=c(1,3)) # 3 plots in 1 row 8.25
+for ( s in -1:1 ) {
+idx <- which( d$shade_cent==s )
+plot( d$water_cent[idx] , d$blooms_std[idx] , xlim=c(-1,1) , ylim=c(0,1) ,
+xlab="water" , ylab="blooms" , pch=16 , col=rangi2 )
+mu <- link( m8.6 , data=data.frame( shade_cent=s , water_cent=-1:1 ) )
+for ( i in 1:20 ) lines( -1:1 , mu[i,] , col=col.alpha("black",0.3) )
+}
+
+par(mfrow=c(1,3)) # 3 plots in 1 row 8.25
+for ( s in -1:1 ) {
+idx <- which( d$shade_cent==s )
+plot( d$water_cent[idx] , d$blooms_std[idx] , xlim=c(-1,1) , ylim=c(0,1) ,
+xlab="water" , ylab="blooms" , pch=16 , col=rangi2 )
+mu <- link( m8.7, data=data.frame( shade_cent=s , water_cent=-1:1 ) )
+for ( i in 1:20 ) lines( -1:1 , mu[i,] , col=col.alpha("black",0.3) )
+}
+```
+What is going on here? The likely explanation for these results is that tulips need both
+water and light to produce blooms. At low light levels, water can’t have much of an effect,
+because the tulips don’t have enough light to produce blooms. At higher light levels, water
+can matter more, because the tulips have enough light to produce blooms. At very high light
+levels, light is no longer limiting the blooms, and so water can have a much more dramatic
+impact on the outcome. The same explanation works symmetrically for shade. If there isn’t
+enough light, then more water hardly helps
+
+### 8.3.4 Plotting prior predictions
+```{r}
+set.seed(7)
+prior <- extract.prior(m8.6)
+```
+
+
