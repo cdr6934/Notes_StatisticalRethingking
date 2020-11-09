@@ -1,0 +1,84 @@
+---
+title: "Chapter 9: Markov Chain Monte Carlo"
+output: html_notebook
+---
+**Markov Chain Monte Carlo**
+Instead of having to lean on quadratic and other approximations of
+the shape of the posterior, now we’ll be able to sample directly from the posterior 
+without assuming a Gaussian, or any other, shape for it.
+
+The cost of this power is that it may take much longer for our estimation to complete,
+and usually more work is required to specify the model as well. But the benefit is escaping the
+awkwardness of assuming multivariate normality. Equally important is the ability to directly
+estimate models, such as the generalized linear and multilevel models of later chapters. Such
+models routinely produce non-Gaussian posterior distributions, and sometimes they cannot
+be estimated at all with the techniques of earlier chapters.
+
+## 9.1 Good King Markov and His island kingdom 
+
+```{r}
+num_weeks <- 1e5
+positions <- rep(0,num_weeks)
+current <- 10
+for ( i in 1:num_weeks ) {
+# record current position
+positions[i] <- current
+# flip coin to generate proposal
+proposal <- current + sample( c(-1,1) , size=1 )
+# now make sure he loops around the archipelago
+if ( proposal < 1 ) proposal <- 10
+if ( proposal > 10 ) proposal <- 1
+# move?
+prob_move <- proposal/current
+current <- ifelse( runif(1) < prob_move , proposal , current )
+}
+```
+
+The above code is the solution to the metropolis algorithm 
+
+## 9.2 Metropolis, Gibbs and Sadness
+
+Metropolis Algorithm - the goal is draw samples from an unknown and usually complex target distribution, like a posterior probability distribution.
+
+* the "islands" in our objective are parameter values, and they need not be discrete, but can instead take on a continuous range of values as usual.
+* The "population sizes" in our objective are the posterior probabilities at each parameter value 
+* the "weeks" in our objective are samples taken from the join posterior of the parameters in the model 
+
+Provided the way we choose our proposed parameter values at each step is symmetric—so
+that there is an equal chance of proposing from A to B and from B to A—then the Metropolis
+algorithm will eventually give us a collection of samples from the joint posterior. We can then
+use these samples just like all the samples you’ve already used in this book.
+
+The Metropolis algorithm is the grandparent of several different strategies for getting
+samples from unknown posterior distributions. In the remainder of this section, I briefly
+explain the concept behind Gibbs sampling. Gibbs sampling is much better than plain Metropolis,
+and it continues to be common in applied Bayesian statistics. But it is rapidly being
+replaced by other algorithms.
+
+### 9.2.1 Gibbs Sampling 
+To reiterate, the Metropolis algorithm works whenever the probability of proposing a jump to B from A is equal to the probability of proposing A from B when the proposal distribution is symmetric. 
+
+Gibbs sampling is a variant of the Metropolis Hastings algorithm that uses clever proposals and is therfore more efficient. 
+
+How Gibbs sampling computes these adaptive proposals depends upon using particular combinations of prior distributions and likelihoods known as conjugate pairs. Conjugate pairs hvae analytical solutions for the posterior distribution of an individual parameter. 
+
+
+### 9.2.2 High Dimensional Sadness 
+There are severe limitations to Gibbs sampling 
+1. you don't want to use conjugate priors 
+2. models become more complex and contain hundreds or thousands of parameters 
+
+
+Concentration of Measure: most of the probability mass of a high dimension distribution is always very far from the mode of the distribution. 
+
+```{r}
+D <- 10 
+T <- 1e3
+Y <- rmvnorm(T,rep(0,D),diag(D))
+rad_dist <- function( Y ) sqrt( sum(Y^2) )
+Rd <- sapply( 1:T , function(i) rad_dist( Y[i,] ) )
+dens( Rd )
+```
+
+## 9.3 Hamiltonian Monte Carlo 
+
