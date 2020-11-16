@@ -81,4 +81,4 @@ dens( Rd )
 ```
 
 ## 9.3 Hamiltonian Monte Carlo 
-
+Nothing I've done today will work... 
